@@ -1,0 +1,28 @@
+syntax = "proto3";
+package store;
+
+service UUID {
+  rpc GenerateUUID (UUIDRequest) returns (UUIDResponse);
+  rpc Watch(UUIDRequest) returns (stream WatchResponse);
+}
+
+message WatchResponse {
+  oneof response_type {
+    UUIDResponse uuid_response = 1;
+    UUIDRequest uuid_request = 2;
+  }
+ // string message = 3;
+}
+
+message UUIDRequest {
+  string prefix = 1;
+  string entity = 2;
+}
+
+message UUIDResponse {
+  string uuid = 1;
+}
+
+message UUIDRequestStream {
+  repeated UUIDRequest requests = 1;
+}
