@@ -2,6 +2,7 @@ use tonic::transport::Server;
 
 pub mod server;
 pub mod store;
+pub mod prefix_mappings;
 
 mod store_proto {
     include!("store.rs");

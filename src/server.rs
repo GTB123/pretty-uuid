@@ -11,6 +11,8 @@ use tonic::{Request, Response, Status};
 
 use crate::store::uuid_server::Uuid;
 use crate::store::{watch_response, UuidRequest, UuidResponse, WatchResponse};
+use crate::prefix_mappings::PrefixMappings;
+
 
 //uuid server implementation
 #[derive(Clone, Debug)]
@@ -27,6 +29,7 @@ pub struct UuidService {
         broadcast::Sender<LogMessage>,
         broadcast::Receiver<LogMessage>,
     ),
+    prefix_mappings: HashMap<String, String>,
 }
 
 impl Default for UuidService {
@@ -37,36 +40,50 @@ impl Default for UuidService {
 
 impl UuidService {
     pub fn new() -> Self {
-        let (tx, rx) = broadcast::channel(100); // Adjust the channel size as needed
+        let (tx, rx) = broadcast::channel(100);
+        let prefix_mappings = match PrefixMappings::new() {
+            Ok(mappings) => mappings,
+            Err(e) => {
+                eprintln!("Error loading prefix mappings: {}", e);
+                std::process::exit(1);
+            }
+        };
+
         Self {
             uuids: Arc::new(Mutex::new(HashMap::new())),
             log_channel: (tx, rx),
+            prefix_mappings: prefix_mappings.mappings, 
         }
     }
 }
 
 #[tonic::async_trait]
 impl Uuid for UuidService {
+    type WatchStream = Pin<Box<dyn Stream<Item = Result<WatchResponse, Status>> + Send + Sync>>;
+
     async fn generate_uuid(
         &self,
         request: Request<UuidRequest>,
     ) -> Result<Response<UuidResponse>, Status> {
         let request = request.into_inner();
         let prefix = request.prefix.clone();
-        let entity = request.entity.clone();
-        //define a custom alphabet for the nanoid
+        
+        let mapped_prefix = match self.prefix_mappings.get(&prefix) {
+            Some(prefix) => prefix.clone(),
+            None => return Err(Status::not_found("Prefix mapping not found")),
+        };
         let alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
             .chars()
             .collect::<Vec<_>>();
         let uuid = nanoid!(22, &alphabet);
-        let formatted_uuid = format!("{}:{}:{}", prefix, entity, uuid);
+        let formatted_uuid = format!("{}_{}", mapped_prefix, uuid);
 
         let response = UuidResponse {
             uuid: formatted_uuid,
         };
 
         // Send the request to the logging channel
-        let log_request = request.clone(); // Clone the request for logging
+        let log_request = request.clone(); 
         let log_sender = self.log_channel.0.clone();
         let log_message = response.clone();
         tokio::spawn(async move {
@@ -77,14 +94,12 @@ impl Uuid for UuidService {
         Ok(Response::new(response))
     }
 
-    type WatchStream = Pin<Box<dyn Stream<Item = Result<WatchResponse, Status>> + Send + Sync>>;
-
     async fn watch(
         &self,
         _request: Request<UuidRequest>,
     ) -> Result<Response<Self::WatchStream>, Status> {
         let (tx, rx) = mpsc::channel(4);
-        let mut log_receiver = self.log_channel.0.subscribe(); // Assuming .1 is the Receiver part of the log_channel
+        let mut log_receiver = self.log_channel.0.subscribe(); 
 
         tokio::spawn(async move {
             while let Ok(log_message) = log_receiver.recv().await {
@@ -94,7 +109,6 @@ impl Uuid for UuidService {
                         // Wrap the request in the new WatchResponse type
                         let watch_response = WatchResponse {
                             response_type: Some(watch_response::ResponseType::UuidRequest(request)),
-                            //message: request_str
                         };
                         // Send the wrapped request
                         if tx.send(Ok(watch_response)).await.is_err() {
@@ -106,7 +120,6 @@ impl Uuid for UuidService {
                         println!("{:?}", response);
                         let watch_response = WatchResponse {
                             response_type: Some(watch_response::ResponseType::UuidResponse(response)),
-                            //message: response_str
                         };
                         // Send the wrapped response
                         if tx.send(Ok(watch_response)).await.is_err() {

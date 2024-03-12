@@ -20,8 +20,6 @@ pub mod watch_response {
 pub struct UuidRequest {
     #[prost(string, tag = "1")]
     pub prefix: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub entity: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

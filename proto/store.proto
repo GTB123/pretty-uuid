@@ -11,12 +11,10 @@ message WatchResponse {
     UUIDResponse uuid_response = 1;
     UUIDRequest uuid_request = 2;
   }
- // string message = 3;
 }
 
 message UUIDRequest {
   string prefix = 1;
-  string entity = 2;
 }
 
 message UUIDResponse {
